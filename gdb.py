@@ -107,14 +107,28 @@ class GdbSession:
             lines: list[str] = []
 
             async def _collect() -> None:
+                # In MI2 all-stop mode, execution commands (run, continue,
+                # step, …) emit (gdb) *twice*: once right after ^running to
+                # acknowledge the command, and again after *stopped when the
+                # inferior halts.  We must not return on the first (gdb) or
+                # the *stopped record and second (gdb) will pollute the next
+                # command's response.
+                waiting_for_stop = False
                 while True:
                     raw = await self.process.stdout.readline()
                     if not raw:
                         raise GdbError("GDB process exited unexpectedly")
                     line = raw.decode(errors="replace").rstrip("\n")
                     if _PROMPT_RE.match(line):
-                        return
-                    lines.append(line)
+                        if not waiting_for_stop:
+                            return
+                        # (gdb) between ^running and *stopped — keep reading
+                    else:
+                        lines.append(line)
+                        if line.startswith("^running"):
+                            waiting_for_stop = True
+                        elif line.startswith("*stopped"):
+                            waiting_for_stop = False
 
             try:
                 await asyncio.wait_for(_collect(), timeout=timeout)
