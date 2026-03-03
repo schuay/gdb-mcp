@@ -70,13 +70,14 @@ async def exec_command(
     """Execute any GDB command and return its output.
 
     Use this for commands not covered by the other tools, for example:
-      info locals, info args, info threads, info breakpoints
+      info breakpoints
       watch expr, rwatch expr
       set var x = 5
-      thread N, thread apply all bt
-      frame N, up, down
+      thread apply all bt
       catch syscall, catch throw
       source /path/to/script.gdb
+      attach PID
+      core-file /path/to/core
 
     IMPORTANT — execution commands: any command that resumes the inferior
     (run, continue, step, next, finish, until, advance, jump, signal, return)
@@ -185,6 +186,23 @@ async def finish(
 
 
 @mcp.tool()
+async def until(
+    session_id: str,
+    location: str,
+    timeout: float = 30.0,
+) -> str:
+    """Run until a source location is reached (GDB 'until').
+
+    Useful for skipping over loops or blocks of code without setting and
+    deleting a temporary breakpoint.  Blocks until the inferior stops.
+
+    location: file:line, function name, or *address
+              e.g. "foo.c:42", "cleanup", "*0x401234"
+    """
+    return await manager.get(session_id).send(f"until {location}", timeout=timeout)
+
+
+@mcp.tool()
 async def interrupt(session_id: str) -> dict:
     """Send SIGINT to interrupt a running inferior.
 
@@ -235,7 +253,47 @@ async def delete_breakpoints(
     return await manager.get(session_id).send(cmd)
 
 
-# ── Inspection ────────────────────────────────────────────────────────────────
+@mcp.tool()
+async def watch(
+    session_id: str,
+    expression: str,
+    mode: str = "write",
+) -> str:
+    """Set a watchpoint that stops execution when an expression changes (GDB 'watch').
+
+    Watchpoints detect *when* data changes, not *where* execution reaches.
+    Useful for tracking memory corruption, unexpected variable mutations, etc.
+
+    expression: any GDB expression — variable, memory location, dereferenced pointer
+                e.g. "x", "buf[4]", "*0x601020", "obj->field"
+    mode:       "write"  — stop when expression is written (default, GDB 'watch')
+                "read"   — stop when expression is read (GDB 'rwatch')
+                "access" — stop on any read or write (GDB 'awatch')
+    """
+    cmds = {"write": "watch", "read": "rwatch", "access": "awatch"}
+    cmd = cmds.get(mode, "watch")
+    return await manager.get(session_id).send(f"{cmd} {expression}")
+
+
+# ── Threads ───────────────────────────────────────────────────────────────────
+
+@mcp.tool()
+async def list_threads(session_id: str) -> str:
+    """List all threads in the inferior with their current location (GDB 'info threads')."""
+    return await manager.get(session_id).send("info threads")
+
+
+@mcp.tool()
+async def select_thread(session_id: str, thread_id: int) -> str:
+    """Switch to a specific thread (GDB 'thread N').
+
+    Use list_threads to see thread IDs.  After switching, stack and local
+    variable commands operate on the selected thread.
+    """
+    return await manager.get(session_id).send(f"thread {thread_id}")
+
+
+# ── Stack frame navigation ────────────────────────────────────────────────────
 
 @mcp.tool()
 async def backtrace(
@@ -248,6 +306,85 @@ async def backtrace(
     """
     cmd = f"backtrace {limit}" if limit is not None else "backtrace"
     return await manager.get(session_id).send(cmd)
+
+
+@mcp.tool()
+async def select_frame(session_id: str, frame: int) -> str:
+    """Select a stack frame by number (GDB 'frame N').
+
+    Frame 0 is the innermost (current) frame; use backtrace to see frame numbers.
+    After selecting a frame, inspection commands (print, info locals, list_source)
+    operate in that frame's context.
+    """
+    return await manager.get(session_id).send(f"frame {frame}")
+
+
+@mcp.tool()
+async def up(session_id: str, count: int = 1) -> str:
+    """Move up the call stack toward the caller (GDB 'up').
+
+    count: number of frames to move up (default 1).
+    """
+    return await manager.get(session_id).send(f"up {count}")
+
+
+@mcp.tool()
+async def down(session_id: str, count: int = 1) -> str:
+    """Move down the call stack toward the innermost frame (GDB 'down').
+
+    count: number of frames to move down (default 1).
+    """
+    return await manager.get(session_id).send(f"down {count}")
+
+
+# ── Inspection ────────────────────────────────────────────────────────────────
+
+@mcp.tool()
+async def context(session_id: str) -> str:
+    """Return a full snapshot of the current debugging context.
+
+    Combines the most commonly needed post-stop information into one call:
+      - Current frame: function, file, and line number
+      - Function arguments
+      - Local variables
+      - Source listing around the current line
+
+    Call this immediately after any stop event (breakpoint hit, step, interrupt)
+    to orient yourself before deciding on the next action.
+    """
+    s = manager.get(session_id)
+    parts: list[str] = []
+    for cmd, label in [
+        ("frame",        "Frame"),
+        ("info args",    "Arguments"),
+        ("info locals",  "Locals"),
+        ("list",         "Source"),
+    ]:
+        out = await s.send(cmd)
+        if out.strip():
+            parts.append(f"=== {label} ===\n{out}")
+    return "\n".join(parts)
+
+
+@mcp.tool()
+async def list_variables(
+    session_id: str,
+    scope: str = "locals",
+) -> str:
+    """Show variables in the current stack frame (GDB 'info locals' / 'info args').
+
+    scope: "locals" — local variables only (default)
+           "args"   — function arguments only
+           "all"    — both locals and arguments
+    """
+    s = manager.get(session_id)
+    if scope == "args":
+        return await s.send("info args")
+    if scope == "all":
+        args_out = await s.send("info args")
+        locals_out = await s.send("info locals")
+        return f"=== Arguments ===\n{args_out}\n=== Locals ===\n{locals_out}"
+    return await s.send("info locals")
 
 
 @mcp.tool(name="print")
