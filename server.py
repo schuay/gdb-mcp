@@ -9,7 +9,6 @@ parameters.  Use exec_command for anything not covered by the named tools.
 
 import re
 from contextlib import asynccontextmanager
-from typing import Optional
 
 from mcp.server.fastmcp import FastMCP
 
@@ -22,9 +21,7 @@ manager = GdbManager()
 async def _lifespan(app):
     manager.start_cleanup()
     yield
-    # Clean up all sessions on server shutdown
-    for sid in list(manager._sessions):
-        await manager.remove(sid)
+    await manager.close_all()
 
 
 mcp = FastMCP("mcp-gdb", lifespan=_lifespan)
@@ -34,9 +31,9 @@ mcp = FastMCP("mcp-gdb", lifespan=_lifespan)
 
 @mcp.tool()
 async def start_session(
-    binary: Optional[str] = None,
-    args: Optional[list[str]] = None,
-    cwd: Optional[str] = None,
+    binary: str | None = None,
+    args: list[str] | None = None,
+    cwd: str | None = None,
 ) -> dict:
     """Start a new GDB session. Returns the session_id used by all other tools.
 
@@ -122,7 +119,7 @@ async def batch_commands(
 @mcp.tool()
 async def run(
     session_id: str,
-    args: Optional[str] = None,
+    args: str | None = None,
     timeout: float = 30.0,
 ) -> str:
     """Run (or re-run) the inferior program (GDB 'run' / 'r').
@@ -204,7 +201,7 @@ async def interrupt(session_id: str) -> dict:
 async def set_breakpoint(
     session_id: str,
     location: str,
-    condition: Optional[str] = None,
+    condition: str | None = None,
     temporary: bool = False,
 ) -> str:
     """Set a breakpoint (GDB 'break' / 'tbreak' / 'br').
@@ -228,7 +225,7 @@ async def set_breakpoint(
 @mcp.tool()
 async def delete_breakpoints(
     session_id: str,
-    number: Optional[int] = None,
+    number: int | None = None,
 ) -> str:
     """Delete one breakpoint or all breakpoints (GDB 'delete').
 
@@ -243,7 +240,7 @@ async def delete_breakpoints(
 @mcp.tool()
 async def backtrace(
     session_id: str,
-    limit: Optional[int] = None,
+    limit: int | None = None,
 ) -> str:
     """Show the call stack (GDB 'backtrace' / 'bt').
 
@@ -257,7 +254,7 @@ async def backtrace(
 async def print_expr(
     session_id: str,
     expression: str,
-    fmt: Optional[str] = None,
+    fmt: str | None = None,
 ) -> str:
     """Print/evaluate a GDB expression (GDB 'print' / 'p').
 
@@ -294,7 +291,7 @@ async def examine_memory(
 @mcp.tool()
 async def info_registers(
     session_id: str,
-    register: Optional[str] = None,
+    register: str | None = None,
 ) -> str:
     """Show CPU register values (GDB 'info registers').
 
@@ -308,7 +305,7 @@ async def info_registers(
 @mcp.tool()
 async def list_source(
     session_id: str,
-    location: Optional[str] = None,
+    location: str | None = None,
 ) -> str:
     """List source code (GDB 'list' / 'l').
 
@@ -322,7 +319,7 @@ async def list_source(
 @mcp.tool()
 async def disassemble(
     session_id: str,
-    location: Optional[str] = None,
+    location: str | None = None,
     with_source: bool = False,
 ) -> str:
     """Disassemble code (GDB 'disassemble').

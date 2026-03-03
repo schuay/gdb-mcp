@@ -10,10 +10,11 @@ MI2 output record types handled:
   @"..."    target stream   → included in output (inferior stdout/stderr)
   &"..."    log stream      → skipped (command echo)
   ^done     result record   → terminates read loop (no output)
-  ^running  result record   → terminates read loop (no output)
+  ^running  result record   → sets waiting_for_stop; suppresses intermediate prompt
   ^exit     result record   → terminates read loop (no output)
   ^error,msg="..."          → formatted as "Error: ..."
   *stopped,...              → formatted as "[Stopped: reason, func, file:line]"
+                              clears waiting_for_stop; next (gdb) terminates loop
   =...      notify record   → skipped
   *running  async record    → skipped
 """
@@ -25,7 +26,6 @@ import time
 import uuid
 from contextlib import suppress
 from dataclasses import dataclass, field
-from typing import Optional
 
 
 # Matches the GDB/MI prompt line: "(gdb)" or "(gdb) "
@@ -188,9 +188,9 @@ class GdbManager:
 
     async def create(
         self,
-        binary: Optional[str] = None,
-        args: Optional[list[str]] = None,
-        cwd: Optional[str] = None,
+        binary: str | None = None,
+        args: list[str] | None = None,
+        cwd: str | None = None,
     ) -> GdbSession:
         """Spawn a new GDB process and return a ready, hardened GdbSession."""
         cmd = ["gdb", "--interpreter=mi2", "--quiet"]
@@ -240,6 +240,11 @@ class GdbManager:
             return False
         await s.close()
         return True
+
+    async def close_all(self) -> None:
+        """Close all active sessions (used on server shutdown)."""
+        for sid in list(self._sessions):
+            await self.remove(sid)
 
     def list_all(self) -> list[dict]:
         now = time.monotonic()
