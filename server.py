@@ -80,6 +80,13 @@ async def exec_command(
       frame N, up, down
       catch syscall, catch throw
       source /path/to/script.gdb
+
+    IMPORTANT — execution commands: any command that resumes the inferior
+    (run, continue, step, next, finish, until, advance, jump, signal, return)
+    will BLOCK until the inferior stops again, exactly like the named tools do.
+    The return value will include the stop reason, e.g.:
+      [Stopped: breakpoint-hit, in main, at foo.c:10]
+    While blocked, the session can be interrupted with the interrupt tool.
     """
     return await manager.get(session_id).send(command, timeout=timeout)
 
