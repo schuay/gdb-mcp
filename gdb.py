@@ -43,14 +43,36 @@ class GdbError(Exception):
 
 
 def _unescape(s: str) -> str:
-    """Unescape GDB MI C-style string escapes (content between outer quotes)."""
+    """Unescape GDB MI C-style string escapes (content between outer quotes).
+
+    Handles: simple escapes (\\n \\t \\r \\\\ \\" \\a \\b \\f \\v),
+             octal sequences (\\NNN), and hex sequences (\\xNN).
+    Unknown escapes are passed through with the backslash preserved.
+    """
+    _SIMPLE = {
+        "n": "\n", "t": "\t", "r": "\r", "\\": "\\", '"': '"',
+        "a": "\a", "b": "\b", "f": "\f", "v": "\v",
+    }
     result: list[str] = []
     i = 0
     while i < len(s):
         if s[i] == "\\" and i + 1 < len(s):
             c = s[i + 1]
-            result.append({"n": "\n", "t": "\t", "r": "\r", "\\": "\\", '"': '"'}.get(c, c))
-            i += 2
+            if c in _SIMPLE:
+                result.append(_SIMPLE[c])
+                i += 2
+            elif c == "x" and i + 3 < len(s) and all(h in "0123456789abcdefABCDEF" for h in s[i+2:i+4]):
+                result.append(chr(int(s[i+2:i+4], 16)))
+                i += 4
+            elif c in "01234567":
+                j = i + 1
+                while j < min(i + 4, len(s)) and s[j] in "01234567":
+                    j += 1
+                result.append(chr(int(s[i+1:j], 8)))
+                i = j
+            else:
+                result.append("\\" + c)  # preserve unknown escapes intact
+                i += 2
         else:
             result.append(s[i])
             i += 1
@@ -75,7 +97,7 @@ def _format_output(lines: list[str]) -> str:
             reason_m = re.search(r'reason="([^"]+)"', line)
             func_m   = re.search(r'func="([^"]+)"', line)
             file_m   = re.search(r'file="([^"]+)"', line)
-            lineno_m = re.search(r',line="([^"]+)"', line)
+            lineno_m = re.search(r'\bline="([^"]+)"', line)
             info: list[str] = []
             if reason_m: info.append(reason_m.group(1))
             if func_m:   info.append(f"in {func_m.group(1)}")
@@ -91,6 +113,7 @@ class GdbSession:
     id: str
     process: asyncio.subprocess.Process
     _lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
+    _broken: bool = field(default=False, repr=False)
     last_used: float = field(default_factory=time.monotonic, repr=False)
 
     async def send(self, cmd: str, timeout: float = 30.0) -> str:
@@ -99,6 +122,11 @@ class GdbSession:
         Commands on the same session are serialized via an asyncio.Lock so
         concurrent callers never interleave writes or reads.
         """
+        if self._broken:
+            raise GdbError(
+                "Session is tainted by a previous timeout and cannot be used; "
+                "call stop_session and start a new one"
+            )
         async with self._lock:
             self.last_used = time.monotonic()
             self.process.stdin.write((cmd + "\n").encode())
@@ -133,6 +161,10 @@ class GdbSession:
             try:
                 await asyncio.wait_for(_collect(), timeout=timeout)
             except asyncio.TimeoutError:
+                # Taint the session: GDB is still running and will eventually
+                # emit *stopped + (gdb), which would corrupt the next command's
+                # response if the session were reused.
+                self._broken = True
                 raise GdbError(f"Command timed out after {timeout}s: {cmd!r}")
 
             return _format_output(lines)

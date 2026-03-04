@@ -107,7 +107,13 @@ async def batch_commands(
     for cmd in commands:
         try:
             out = await s.send(cmd, timeout=timeout)
-            results.append({"command": cmd, "output": out, "error": False})
+            # send() only raises GdbError for infrastructure failures (timeout,
+            # process exit).  GDB-level errors (^error records) are returned as
+            # "Error: ..." strings, so we detect them here for stop_on_error.
+            is_error = out.startswith("Error: ")
+            results.append({"command": cmd, "output": out, "error": is_error})
+            if is_error and stop_on_error:
+                break
         except GdbError as e:
             results.append({"command": cmd, "output": str(e), "error": True})
             if stop_on_error:
@@ -354,6 +360,10 @@ async def context(session_id: str) -> str:
     """
     s = manager.get(session_id)
     parts: list[str] = []
+    # NOTE: "frame" must come before "list". GDB's "list" without arguments
+    # scrolls forward on each call, but "frame" resets the internal list
+    # pointer to the current PC.  Reordering these would cause "list" to
+    # show the wrong lines on repeated context() calls.
     for cmd, label in [
         ("frame",        "Frame"),
         ("info args",    "Arguments"),
