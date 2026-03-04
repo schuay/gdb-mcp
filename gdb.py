@@ -21,6 +21,7 @@ MI2 output record types handled:
 
 import asyncio
 import re
+import shlex
 import signal
 import time
 import uuid
@@ -104,6 +105,11 @@ def _format_output(lines: list[str]) -> str:
             if file_m and lineno_m:
                 info.append(f"at {file_m.group(1)}:{lineno_m.group(1)}")
             parts.append(f"[Stopped: {', '.join(info)}]\n" if info else f"[{line}]\n")
+        elif line and line[0] not in "^*=":
+            # Raw text not matching any MI record prefix — pass through.
+            # Catches warnings from stderr or other non-MI-framed output
+            # (e.g. libthread_db messages, dynamic linker warnings).
+            parts.append(line + "\n")
         # ^done, ^running, ^exit, =..., *running → no content, skip
     return "".join(parts)
 
@@ -126,6 +132,11 @@ class GdbSession:
             raise GdbError(
                 "Session is tainted by a previous timeout and cannot be used; "
                 "call stop_session and start a new one"
+            )
+        if "\n" in cmd:
+            raise GdbError(
+                "Command contains embedded newlines; "
+                "use batch_commands to send multiple commands"
             )
         async with self._lock:
             self.last_used = time.monotonic()
@@ -262,7 +273,7 @@ class GdbManager:
             await session.send(setup_cmd)
 
         if binary and args:
-            await session.send("set args " + " ".join(args))
+            await session.send("set args " + " ".join(shlex.quote(a) for a in args))
 
         self._sessions[session.id] = session
         return session

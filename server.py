@@ -240,9 +240,13 @@ async def set_breakpoint(
     cmd = f"{'tbreak' if temporary else 'break'} {location}"
     output = await s.send(cmd)
     if condition:
-        bp_m = re.search(r"Breakpoint (\d+)", output)
+        # Case-insensitive: GDB prints "Breakpoint N" for break and
+        # "Temporary breakpoint N" (lowercase b) for tbreak.
+        bp_m = re.search(r"(?i)breakpoint (\d+)", output)
         if bp_m:
-            await s.send(f"condition {bp_m.group(1)} {condition}")
+            cond_out = await s.send(f"condition {bp_m.group(1)} {condition}")
+            if cond_out.strip():
+                output += cond_out
     return output
 
 
