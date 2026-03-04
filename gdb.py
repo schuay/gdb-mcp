@@ -161,10 +161,17 @@ class GdbSession:
             try:
                 await asyncio.wait_for(_collect(), timeout=timeout)
             except asyncio.TimeoutError:
-                # Taint the session: GDB is still running and will eventually
-                # emit *stopped + (gdb), which would corrupt the next command's
-                # response if the session were reused.
-                self._broken = True
+                # Attempt recovery: send SIGINT to stop the inferior, then
+                # drain stdout to the next (gdb) prompt.  This leaves the
+                # pipe clean so the session can be reused.  Only taint the
+                # session if recovery itself fails (GDB unresponsive/exited).
+                self.interrupt()
+                try:
+                    await asyncio.wait_for(
+                        _drain_to_prompt(self.process.stdout), timeout=5.0
+                    )
+                except (asyncio.TimeoutError, GdbError):
+                    self._broken = True
                 raise GdbError(f"Command timed out after {timeout}s: {cmd!r}")
 
             return _format_output(lines)

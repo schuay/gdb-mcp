@@ -136,7 +136,7 @@ return formatted string
 
 The `asyncio.Lock` ensures that concurrent MCP tool calls on the same session never interleave their writes and reads. Without it, if two tool calls write simultaneously, their output would be mixed together.
 
-The inner `_collect()` coroutine is wrapped with `asyncio.wait_for(timeout=30.0)`. On timeout, a `GdbError` is raised. The timeout does not kill GDB — it just unblocks the caller. Subsequent commands on the same session will work, but the locked output may be partially consumed; in practice this means the session should be restarted after a timeout.
+The inner `_collect()` coroutine is wrapped with `asyncio.wait_for(timeout=30.0)`. On timeout, the implementation sends SIGINT to GDB and drains stdout to the next `(gdb)` prompt before raising `GdbError`. If recovery succeeds, the session is left clean and usable. If recovery fails, `_broken` is set and all future `send()` calls raise immediately.
 
 ### Interrupt mechanism
 
@@ -259,7 +259,9 @@ This implementation takes: MI2 for reliable termination (vs. signal-slot), named
 
 ## Known limitations and edge cases
 
-**Timeout does not reset the session.** If `send()` times out (program ran past 30 seconds), the lock is released but GDB is still running the command. The next `send()` call will immediately see leftover output from the previous command, producing garbled results. The correct recovery is to call `interrupt()` first, then wait for the running tool to return, before issuing more commands. Alternatively, `stop_session` + `start_session` gives a clean slate.
+**Timeout triggers auto-recovery via SIGINT.** If `send()` times out (program ran past the timeout), the implementation automatically sends SIGINT to stop the inferior and drains stdout to the next `(gdb)` prompt. If recovery succeeds the session is left clean and fully usable. If recovery itself fails (GDB is unresponsive or has exited), the session is tainted (`_broken = True`) and all subsequent `send()` calls immediately raise `GdbError`. In the taint case, `stop_session` + `start_session` gives a clean slate.
+
+**Programs that read from stdin will block.** The inferior's stdin is inherited from GDB's own stdin pipe (not a PTY). Programs that call `scanf`, `fgets`, `std::cin`, or any other blocking stdin read will hang indefinitely — the `run` tool will eventually time out. To test such programs, either redirect stdin from a file (`run < input.txt` via `exec_command`) or pre-feed input via `exec_command("set args ...")` before running.
 
 **`set args` with shell metacharacters.** `GdbManager.create` builds the args string with `" ".join(args)` and sends `set args <string>` to GDB. GDB's `set args` uses its own shell-like parsing. Arguments with spaces or quotes need to be pre-escaped by the caller. There is no sanitization.
 

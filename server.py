@@ -357,6 +357,9 @@ async def context(session_id: str) -> str:
 
     Call this immediately after any stop event (breakpoint hit, step, interrupt)
     to orient yourself before deciding on the next action.
+
+    Note: this resets GDB's internal source-listing position to the current PC,
+    which cancels any forward scrolling done by previous list_source calls.
     """
     s = manager.get(session_id)
     parts: list[str] = []
