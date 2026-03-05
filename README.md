@@ -32,7 +32,7 @@ uv tool upgrade gdb-mcp
 ### Claude Code
 
 ```bash
-claude mcp add gdb -- uv run --directory /path/to/gdb-mcp python server.py
+claude mcp add gdb -- gdb-mcp
 ```
 
 Or add manually to `~/.claude.json`:
@@ -41,8 +41,7 @@ Or add manually to `~/.claude.json`:
 {
   "mcpServers": {
     "gdb": {
-      "command": "uv",
-      "args": ["run", "--directory", "/path/to/gdb-mcp", "python", "server.py"]
+      "command": "gdb-mcp"
     }
   }
 }
@@ -56,12 +55,14 @@ Add to `claude_desktop_config.json`:
 {
   "mcpServers": {
     "gdb": {
-      "command": "/path/to/gdb-mcp/.venv/bin/python",
-      "args": ["/path/to/gdb-mcp/server.py"]
+      "command": "gdb-mcp"
     }
   }
 }
 ```
+
+If `gdb-mcp` is not on `$PATH` in your desktop environment, replace `"gdb-mcp"` with
+the full path printed by `which gdb-mcp` (typically `~/.local/bin/gdb-mcp`).
 
 ## Tools
 
