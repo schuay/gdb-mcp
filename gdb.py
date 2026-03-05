@@ -1,4 +1,4 @@
-"""GDB session management for mcp-gdb.
+"""GDB session management for gdb-mcp.
 
 Each GdbSession owns one GDB subprocess launched with --interpreter=mi2.
 Commands are sent as plain GDB CLI text; responses are read until the

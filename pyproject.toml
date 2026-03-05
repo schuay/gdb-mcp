@@ -1,5 +1,5 @@
 [project]
-name = "mcp-gdb"
+name = "gdb-mcp"
 version = "0.1.0"
 description = "MCP server for controlling GDB debugging sessions"
 readme = "README.md"
@@ -9,7 +9,7 @@ dependencies = [
 ]
 
 [project.scripts]
-mcp-gdb = "server:mcp.run"
+gdb-mcp = "server:mcp.run"
 
 [build-system]
 requires = ["hatchling"]

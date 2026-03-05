@@ -1,4 +1,4 @@
-# Development Context for mcp-gdb
+# Development Context for gdb-mcp
 
 This document captures the full design rationale, protocol mechanics, and architectural decisions made during initial development. It is written so that a new AI agent (or human) can continue work without re-deriving any of it.
 
@@ -214,7 +214,7 @@ Three escalating attempts, each wrapped in `contextlib.suppress(Exception)` so f
 
 ## Key design decisions
 
-**Python + asyncio, not TypeScript/Go.** The most popular reference (signal-slot/mcp-gdb) is TypeScript. Python with asyncio is equally capable: both protocols are line-oriented stdio I/O, and `asyncio.create_subprocess_exec` with `StreamReader` handles it cleanly. Python is shorter, has no compile step, and the resulting code is easy to read and modify.
+**Python + asyncio, not TypeScript/Go.** The most popular reference (signal-slot/gdb-mcp) is TypeScript. Python with asyncio is equally capable: both protocols are line-oriented stdio I/O, and `asyncio.create_subprocess_exec` with `StreamReader` handles it cleanly. Python is shorter, has no compile step, and the resulting code is easy to read and modify.
 
 **No GDB/MI parsing library.** The full MI grammar is complex (nested tuples, lists, key=value trees). We don't need it: all the human-readable output is already in the `~"..."` console stream records, and the `*stopped` record only needs a handful of fields regex-extracted. Pulling in a full MI parser would add a dependency and a lot of code for no benefit in the LLM use case.
 
@@ -247,7 +247,7 @@ An alternative non-blocking design was considered: `run`/`continue` return at `^
 
 Three open-source GDB MCP servers were surveyed before writing this one:
 
-**signal-slot/mcp-gdb** (TypeScript, most popular): 18 named tools, MI mode but output treated as raw text using `line.includes('^done')` as terminator (fragile — fails if program output contains `^done`). No per-session locking (race condition risk). No session timeout. Includes VS Code URI links in source listing output. Inspired the named-tools approach.
+**signal-slot/gdb-mcp** (TypeScript, most popular): 18 named tools, MI mode but output treated as raw text using `line.includes('^done')` as terminator (fragile — fails if program output contains `^done`). No per-session locking (race condition risk). No session timeout. Includes VS Code URI links in source listing output. Inspired the named-tools approach.
 
 **hnmr293/gdb-mcp** (Python): 4 tools (`open`, `call`, `close`, `list_sessions`). MI2 mode, `asyncio.Lock` per session, idle timeout, background sweep — the cleanest async architecture of the three. Also exposes GDB documentation as MCP Resources. Minimal tool surface means the LLM must know GDB syntax. Inspired the `asyncio.Lock`-per-session pattern, idle timeout, and session hardening.
 
@@ -372,8 +372,8 @@ uv run python server.py
 uv run mcp run server.py
 
 # MCP client config (Claude Desktop, Claude Code, etc.)
-# command: /path/to/mcp-gdb/.venv/bin/python
-# args: ["/path/to/mcp-gdb/server.py"]
+# command: /path/to/gdb-mcp/.venv/bin/python
+# args: ["/path/to/gdb-mcp/server.py"]
 ```
 
 The server communicates over stdio and has no command-line arguments. GDB must be on `$PATH`. The server inherits the environment from its parent process.

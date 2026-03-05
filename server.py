@@ -28,7 +28,7 @@ async def _lifespan(app):
     await manager.close_all()
 
 
-mcp = FastMCP("mcp-gdb", lifespan=_lifespan)
+mcp = FastMCP("gdb-mcp", lifespan=_lifespan)
 
 
 # ── Session management ────────────────────────────────────────────────────────

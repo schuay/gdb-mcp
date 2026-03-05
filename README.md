@@ -1,4 +1,4 @@
-# mcp-gdb
+# gdb-mcp
 
 MCP server that exposes GDB debugging as tools. An AI assistant can set
 breakpoints, run programs, step through code, inspect variables and memory,
@@ -13,8 +13,8 @@ and examine registers — all via structured tool calls.
 ## Installation
 
 ```bash
-git clone https://github.com/yourname/mcp-gdb
-cd mcp-gdb
+git clone https://github.com/yourname/gdb-mcp
+cd gdb-mcp
 uv sync
 ```
 
@@ -23,7 +23,7 @@ uv sync
 ### Claude Code
 
 ```bash
-claude mcp add gdb -- uv run --directory /path/to/mcp-gdb python server.py
+claude mcp add gdb -- uv run --directory /path/to/gdb-mcp python server.py
 ```
 
 Or add manually to `~/.claude.json`:
@@ -33,7 +33,7 @@ Or add manually to `~/.claude.json`:
   "mcpServers": {
     "gdb": {
       "command": "uv",
-      "args": ["run", "--directory", "/path/to/mcp-gdb", "python", "server.py"]
+      "args": ["run", "--directory", "/path/to/gdb-mcp", "python", "server.py"]
     }
   }
 }
@@ -47,8 +47,8 @@ Add to `claude_desktop_config.json`:
 {
   "mcpServers": {
     "gdb": {
-      "command": "/path/to/mcp-gdb/.venv/bin/python",
-      "args": ["/path/to/mcp-gdb/server.py"]
+      "command": "/path/to/gdb-mcp/.venv/bin/python",
+      "args": ["/path/to/gdb-mcp/server.py"]
     }
   }
 }
