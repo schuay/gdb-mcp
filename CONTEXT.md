@@ -302,6 +302,54 @@ This implementation takes: MI2 for reliable termination (vs. signal-slot), named
 
 ---
 
+## rr record/replay support
+
+### Overview
+
+[rr](https://rr-project.org/) is a record-and-replay debugger: it records all non-determinism during a program run (syscalls, signals, etc.) and can replay that execution identically, including backwards. Two tools expose this:
+
+- `rr_record` — runs `rr record binary [args]` as a plain subprocess and waits for it to finish.
+- `start_replay_session` — spawns `rr replay [trace_dir] -- --interpreter=mi2 --quiet` and returns a normal `GdbSession`.
+
+### Why rr replay works as a GdbSession
+
+`rr replay` sets up an rr-managed GDB remote target and then **exec-replaces itself with gdb**, passing the `--interpreter=mi2` flag via the `--` argument separator:
+
+```
+rr replay /path/to/trace -- --interpreter=mi2 --quiet
+```
+
+From the subprocess's point of view, once rr has handed off to gdb, the stdin/stdout pipe is talking to a real GDB process in MI2 mode. The `_drain_to_prompt`, `send`, and all session machinery work identically. The `GdbSession.kind` field is set to `"rr-replay"` (vs. `"gdb"`) and is surfaced in `list_sessions` output.
+
+### rr_record implementation
+
+`rr record` is not interactive — it runs the program to completion and exits. It is implemented as a one-shot `asyncio.create_subprocess_exec` call with `communicate()`, not as a `GdbSession`. Key points:
+
+- `stderr=asyncio.subprocess.STDOUT` — merges rr's own messages (including the trace path) and the program's stdout/stderr into one stream.
+- `stdin=asyncio.subprocess.DEVNULL` — programs under recording cannot read from stdin (they would block forever since MCP has no way to inject input).
+- The trace directory is extracted from rr's output with:
+  ```python
+  re.compile(r"Saving execution to trace directory `([^`]+)`")
+  ```
+  rr writes this to stderr: `rr: Saving execution to trace directory `/home/user/.local/share/rr/binary-0`.`
+- Returns `{exit_code, trace_dir, output}`. `trace_dir` is `None` if the regex didn't match (rr not found, or unexpected output format).
+- `FileNotFoundError` from `create_subprocess_exec` is caught and re-raised as `GdbError("rr not found in PATH")`.
+
+### Reverse-execution in replay sessions
+
+rr replay sessions support GDB's reverse-execution commands. These are sent via `exec_command` since they're not common enough to warrant dedicated tools:
+
+| Command | Description |
+|---|---|
+| `reverse-continue` | Run backwards until a breakpoint or watchpoint |
+| `reverse-step` | Step backwards one source line (enters calls) |
+| `reverse-next` | Step backwards one source line (skips calls) |
+| `reverse-finish` | Run backwards to where the current function was called |
+
+These commands produce `^running` / `*stopped` output, so the `waiting_for_stop` mechanism in `_collect()` handles them correctly without any changes.
+
+---
+
 ## Dependencies
 
 | Package | Purpose |

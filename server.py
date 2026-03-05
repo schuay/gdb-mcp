@@ -7,12 +7,16 @@ Each tool takes a session_id (returned by start_session) plus command-specific
 parameters.  Use exec_command for anything not covered by the named tools.
 """
 
+import asyncio
 import re
 from contextlib import asynccontextmanager
 
 from mcp.server.fastmcp import FastMCP
 
 from gdb import GdbError, GdbManager
+
+# Matches: rr: Saving execution to trace directory `/path/to/trace`.
+_RR_TRACE_RE = re.compile(r"Saving execution to trace directory `([^`]+)`")
 
 manager = GdbManager()
 
@@ -57,6 +61,85 @@ async def stop_session(session_id: str) -> dict:
 async def list_sessions() -> list:
     """List all active GDB sessions with their idle time and alive status."""
     return manager.list_all()
+
+
+# ── rr record / replay ────────────────────────────────────────────────────────
+
+@mcp.tool()
+async def rr_record(
+    binary: str,
+    args: list[str] | None = None,
+    cwd: str | None = None,
+    timeout: float = 300.0,
+) -> dict:
+    """Record a program execution with rr for later time-travel replay debugging.
+
+    Runs the program under rr's recorder and waits for it to finish.  Returns
+    the trace directory path (trace_dir) which can be passed directly to
+    start_replay_session.  Note: the program's stdin is closed during recording;
+    non-interactive programs work without changes.
+
+    binary:  path to the executable to record
+    args:    command-line arguments for the binary
+    cwd:     working directory (defaults to current directory)
+    timeout: maximum seconds to wait for the recording to finish
+    """
+    cmd = ["rr", "record", binary]
+    if args:
+        cmd.extend(args)
+
+    try:
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdin=asyncio.subprocess.DEVNULL,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,   # capture rr's "Saving to..." message
+            cwd=cwd,
+        )
+        try:
+            stdout_bytes, _ = await asyncio.wait_for(
+                process.communicate(), timeout=timeout
+            )
+        except asyncio.TimeoutError:
+            process.kill()
+            await process.wait()
+            raise GdbError(f"rr record timed out after {timeout}s")
+    except FileNotFoundError:
+        raise GdbError("rr not found in PATH")
+
+    output = stdout_bytes.decode(errors="replace")
+    m = _RR_TRACE_RE.search(output)
+    trace_dir = m.group(1) if m else None
+
+    return {
+        "exit_code": process.returncode,
+        "trace_dir": trace_dir,
+        "output": output,
+    }
+
+
+@mcp.tool()
+async def start_replay_session(
+    trace_dir: str | None = None,
+    cwd: str | None = None,
+) -> dict:
+    """Start an rr replay session for time-travel debugging.
+
+    Launches rr replay as a GDB session.  The returned session_id works with
+    all standard tools (breakpoint, run, continue_exec, backtrace, print, …).
+    In addition, rr enables reverse-execution commands you can send via
+    exec_command:
+      reverse-continue   — run backwards until a breakpoint or watchpoint
+      reverse-step       — step backwards one source line (into calls)
+      reverse-next       — step backwards one source line (over calls)
+      reverse-finish     — run backwards until the current function was called
+
+    trace_dir: trace directory returned by rr_record; omit to replay the most
+               recently recorded trace in ~/.local/share/rr/
+    cwd:       working directory for rr (defaults to current directory)
+    """
+    s = await manager.create_replay(trace_dir=trace_dir, cwd=cwd)
+    return {"session_id": s.id, "trace_dir": trace_dir}
 
 
 # ── Universal fallback ────────────────────────────────────────────────────────

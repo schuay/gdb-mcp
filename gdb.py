@@ -118,6 +118,7 @@ def _format_output(lines: list[str]) -> str:
 class GdbSession:
     id: str
     process: asyncio.subprocess.Process
+    kind: str = "gdb"  # "gdb" or "rr-replay"
     _lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
     _broken: bool = field(default=False, repr=False)
     last_used: float = field(default_factory=time.monotonic, repr=False)
@@ -262,7 +263,7 @@ class GdbManager:
             process.kill()
             raise GdbError("GDB failed to start (no prompt within 15 s)")
 
-        session = GdbSession(id=uuid.uuid4().hex[:8], process=process)
+        session = GdbSession(id=uuid.uuid4().hex[:8], process=process, kind="gdb")
 
         # Harden the session: disable interactive prompts that would block the reader
         for setup_cmd in (
@@ -274,6 +275,47 @@ class GdbManager:
 
         if binary and args:
             await session.send("set args " + " ".join(shlex.quote(a) for a in args))
+
+        self._sessions[session.id] = session
+        return session
+
+    async def create_replay(
+        self,
+        trace_dir: str | None = None,
+        cwd: str | None = None,
+    ) -> GdbSession:
+        """Start an rr replay session and return a ready GdbSession.
+
+        trace_dir: rr trace directory to replay; omit to replay the latest recording.
+        rr execs gdb directly, so the MI2 protocol works identically to a normal session.
+        """
+        cmd = ["rr", "replay"]
+        if trace_dir:
+            cmd.append(trace_dir)
+        cmd += ["--", "--interpreter=mi2", "--quiet"]
+
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+            cwd=cwd,
+        )
+
+        try:
+            await asyncio.wait_for(_drain_to_prompt(process.stdout), timeout=15.0)
+        except asyncio.TimeoutError:
+            process.kill()
+            raise GdbError("rr replay failed to start (no prompt within 15 s)")
+
+        session = GdbSession(id=uuid.uuid4().hex[:8], process=process, kind="rr-replay")
+
+        for setup_cmd in (
+            "set pagination off",
+            "set confirm off",
+            "set breakpoint pending on",
+        ):
+            await session.send(setup_cmd)
 
         self._sessions[session.id] = session
         return session
@@ -301,6 +343,7 @@ class GdbManager:
         return [
             {
                 "id": s.id,
+                "kind": s.kind,
                 "alive": s.process.returncode is None,
                 "idle_seconds": int(now - s.last_used),
             }
