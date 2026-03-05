@@ -302,6 +302,69 @@ async def interrupt(session_id: str) -> dict:
     return {"status": "SIGINT sent"}
 
 
+# ── rr reverse execution ──────────────────────────────────────────────────────
+
+@mcp.tool(name="reverse-continue")
+async def reverse_continue(
+    session_id: str,
+    timeout: float = 30.0,
+) -> str:
+    """Run backwards until a breakpoint or watchpoint is hit (rr 'reverse-continue' / 'rc').
+
+    Only works in an rr replay session (start_replay_session).
+    Waits until the inferior stops or the timeout expires.
+    """
+    return await manager.get(session_id).send("reverse-continue", timeout=timeout)
+
+
+@mcp.tool(name="reverse-step")
+async def reverse_step(
+    session_id: str,
+    count: int = 1,
+    instruction: bool = False,
+) -> str:
+    """Step backwards one source line or machine instruction (rr 'reverse-step' / 'reverse-stepi').
+
+    Only works in an rr replay session (start_replay_session).
+    Enters called functions (use reverse-next to step over them).
+    count:       number of steps to take
+    instruction: if True, step back one machine instruction instead of one source line
+    """
+    cmd = f"{'reverse-stepi' if instruction else 'reverse-step'} {count}"
+    return await manager.get(session_id).send(cmd)
+
+
+@mcp.tool(name="reverse-next")
+async def reverse_next(
+    session_id: str,
+    count: int = 1,
+    instruction: bool = False,
+) -> str:
+    """Step backwards over one source line or machine instruction (rr 'reverse-next' / 'reverse-nexti').
+
+    Only works in an rr replay session (start_replay_session).
+    Unlike reverse-step, does not enter called functions.
+    count:       number of steps to take
+    instruction: if True, step back one machine instruction instead of one source line
+    """
+    cmd = f"{'reverse-nexti' if instruction else 'reverse-next'} {count}"
+    return await manager.get(session_id).send(cmd)
+
+
+@mcp.tool(name="reverse-finish")
+async def reverse_finish(
+    session_id: str,
+    timeout: float = 30.0,
+) -> str:
+    """Run backwards until just before the current function was called (rr 'reverse-finish').
+
+    Only works in an rr replay session (start_replay_session).
+    The symmetric counterpart of finish: where finish runs forward to the return,
+    reverse-finish runs backward to the call site.
+    """
+    return await manager.get(session_id).send("reverse-finish", timeout=timeout)
+
+
 # ── Breakpoints ───────────────────────────────────────────────────────────────
 
 @mcp.tool(name="breakpoint")

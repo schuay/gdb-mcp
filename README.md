@@ -73,14 +73,14 @@ Add to `claude_desktop_config.json`:
 | `rr_record` | Record a program execution; returns `trace_dir` for later replay |
 | `start_replay_session` | Start an rr replay session; accepts `trace_dir` from `rr_record`, or omit to replay the latest recording |
 
-A replay session works with all standard tools. Reverse-execution is available via `exec_command`:
+A replay session works with all standard tools, plus dedicated reverse-execution tools:
 
-```
-reverse-continue   run backwards to the previous breakpoint or watchpoint
-reverse-step       step backwards one source line (entering calls)
-reverse-next       step backwards one source line (skipping calls)
-reverse-finish     run backwards to where the current function was called
-```
+| Tool | Description |
+|---|---|
+| `reverse-continue` | Run backwards to the previous breakpoint or watchpoint |
+| `reverse-step` | Step backwards one source line or instruction (enters calls) |
+| `reverse-next` | Step backwards one source line or instruction (skips calls) |
+| `reverse-finish` | Run backwards to where the current function was called |
 
 **Typical workflow:**
 

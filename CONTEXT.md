@@ -337,16 +337,16 @@ From the subprocess's point of view, once rr has handed off to gdb, the stdin/st
 
 ### Reverse-execution in replay sessions
 
-rr replay sessions support GDB's reverse-execution commands. These are sent via `exec_command` since they're not common enough to warrant dedicated tools:
+rr replay sessions expose four dedicated tools mirroring their forward counterparts:
 
-| Command | Description |
-|---|---|
-| `reverse-continue` | Run backwards until a breakpoint or watchpoint |
-| `reverse-step` | Step backwards one source line (enters calls) |
-| `reverse-next` | Step backwards one source line (skips calls) |
-| `reverse-finish` | Run backwards to where the current function was called |
+| Tool (MCP name) | GDB command(s) | Forward equivalent |
+|---|---|---|
+| `reverse-continue` | `reverse-continue` | `continue_exec` |
+| `reverse-step` | `reverse-step` / `reverse-stepi` | `step` |
+| `reverse-next` | `reverse-next` / `reverse-nexti` | `next` |
+| `reverse-finish` | `reverse-finish` | `finish` |
 
-These commands produce `^running` / `*stopped` output, so the `waiting_for_stop` mechanism in `_collect()` handles them correctly without any changes.
+`reverse-step` and `reverse-next` accept the same `count` and `instruction` parameters as their forward counterparts. All four produce `^running` / `*stopped` output, so the `waiting_for_stop` mechanism in `_collect()` handles them correctly without any changes.
 
 ---
 
