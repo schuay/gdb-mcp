@@ -64,6 +64,15 @@ Add to `claude_desktop_config.json`:
 If `gdb-mcp` is not on `$PATH` in your desktop environment, replace `"gdb-mcp"` with
 the full path printed by `which gdb-mcp` (typically `~/.local/bin/gdb-mcp`).
 
+### Gemini CLI
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/schuay/gdb-mcp/main/install-gemini.sh | bash
+```
+
+This installs the tool and adds the server to `~/.gemini/settings.json`.
+Requires `jq`.
+
 ## Tools
 
 ### Session management
