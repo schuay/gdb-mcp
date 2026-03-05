@@ -39,11 +39,12 @@ async def start_session(
     args: list[str] | None = None,
     cwd: str | None = None,
 ) -> dict:
-    """Start a new GDB session. Returns the session_id used by all other tools.
+    """Start a new GDB debug session. Returns session_id required by all other tools.
 
-    binary: path to the executable to debug (can also be loaded later with
-            exec_command("file /path/to/binary"))
-    args:   command-line arguments passed to the inferior on run
+    For time-travel (record/replay) debugging use rr_record + start_replay_session instead.
+
+    binary: path to the executable (can also be set later via exec_command("file /path"))
+    args:   command-line arguments passed to the inferior when run is called
     cwd:    working directory for GDB (defaults to current directory)
     """
     s = await manager.create(binary=binary, args=args, cwd=cwd)
@@ -59,7 +60,7 @@ async def stop_session(session_id: str) -> dict:
 
 @mcp.tool()
 async def list_sessions() -> list:
-    """List all active GDB sessions with their idle time and alive status."""
+    """List all active sessions. Each entry includes id, kind ("gdb" or "rr-replay"), alive status, and idle_seconds."""
     return manager.list_all()
 
 
@@ -72,18 +73,17 @@ async def rr_record(
     cwd: str | None = None,
     timeout: float = 300.0,
 ) -> dict:
-    """Record a program execution with rr for later time-travel replay debugging.
+    """Record a full program execution with rr for time-travel debugging. Step 1 of the rr workflow.
 
-    Runs the program under rr's recorder and waits for it to finish.  Returns
-    the trace directory path (trace_dir) which can be passed directly to
-    start_replay_session.  Crashes and non-zero exit codes are normal and do
-    not indicate failure — rr records the crash as part of the trace.
-    Note: the program's stdin is closed during recording.
+    Runs the program to completion and captures a deterministic trace.  Returns trace_dir,
+    which is passed to start_replay_session to begin debugging.  Crashes and non-zero exit
+    codes are normal and recorded as part of the trace — they do not indicate failure.
+    The program's stdin is not available during recording.
 
     binary:  path to the executable to record
     args:    command-line arguments for the binary
     cwd:     working directory (defaults to current directory)
-    timeout: maximum seconds to wait for the recording to finish
+    timeout: maximum seconds to wait for the program to finish (default 5 min)
     """
     cmd = ["rr", "record", binary]
     if args:
@@ -123,19 +123,18 @@ async def start_replay_session(
     trace_dir: str | None = None,
     cwd: str | None = None,
 ) -> dict:
-    """Start an rr replay session for time-travel debugging.
+    """Start an rr replay session for time-travel debugging. Step 2 of the rr workflow.
 
-    Launches rr replay as a GDB session.  The returned session_id works with
-    all standard tools (breakpoint, run, continue_exec, backtrace, print, …).
-    In addition, rr enables reverse-execution commands you can send via
-    exec_command:
-      reverse-continue   — run backwards until a breakpoint or watchpoint
-      reverse-step       — step backwards one source line (into calls)
-      reverse-next       — step backwards one source line (over calls)
-      reverse-finish     — run backwards until the current function was called
+    Call rr_record first to produce a trace, then call this tool.  The returned session_id
+    works with all standard tools (breakpoint, run, continue_exec, step, backtrace, print, …).
+    In addition, four reverse-execution tools let you run the program backwards:
+      reverse-continue  — run backwards to the previous breakpoint or watchpoint
+      reverse-step      — step backwards one source line or instruction (enters calls)
+      reverse-next      — step backwards one source line or instruction (skips calls)
+      reverse-finish    — run backwards to where the current function was called
+    Breakpoints and watchpoints trigger in both directions.
 
-    trace_dir: trace directory returned by rr_record; omit to replay the most
-               recently recorded trace in ~/.local/share/rr/
+    trace_dir: trace directory from rr_record; omit to replay the most recent recording
     cwd:       working directory for rr (defaults to current directory)
     """
     s = await manager.create_replay(trace_dir=trace_dir, cwd=cwd)
@@ -150,24 +149,23 @@ async def exec_command(
     command: str,
     timeout: float = 30.0,
 ) -> str:
-    """Execute any GDB command and return its output.
+    """Execute any GDB command and return its output. Escape hatch for commands without a dedicated tool.
 
-    Use this for commands not covered by the other tools, for example:
-      info breakpoints
-      watch expr, rwatch expr
-      set var x = 5
-      thread apply all bt
-      catch syscall, catch throw
+    Useful examples:
+      info breakpoints          — list all breakpoints
+      set var x = 5             — modify a variable
+      thread apply all bt       — backtrace every thread
+      catch syscall / catch throw
+      advance location          — run to a specific location in the current frame
       source /path/to/script.gdb
       attach PID
       core-file /path/to/core
 
-    IMPORTANT — execution commands: any command that resumes the inferior
-    (run, continue, step, next, finish, until, advance, jump, signal, return)
-    will BLOCK until the inferior stops again, exactly like the named tools do.
-    The return value will include the stop reason, e.g.:
+    IMPORTANT — any command that resumes the inferior (run, continue, step, next, finish,
+    until, advance, jump, signal, return, and the rr reverse-* variants) will BLOCK until
+    the inferior stops again.  Output includes the stop reason, e.g.:
       [Stopped: breakpoint-hit, in main, at foo.c:10]
-    While blocked, the session can be interrupted with the interrupt tool.
+    Use the interrupt tool to unblock a running session.
     """
     return await manager.get(session_id).send(command, timeout=timeout)
 
@@ -212,10 +210,10 @@ async def run(
     args: str | None = None,
     timeout: float = 30.0,
 ) -> str:
-    """Run (or re-run) the inferior program (GDB 'run' / 'r').
+    """Start or restart the inferior program. Blocks until it stops (breakpoint, signal, or exit).
 
-    Waits until the program stops (breakpoint, signal, or exit) or the
-    timeout expires.  Pass args to override the arguments set at start_session.
+    In an rr replay session, run restarts from the very beginning of the recording.
+    Pass args to override arguments set at session creation.
     """
     cmd = f"run {args}" if args else "run"
     return await manager.get(session_id).send(cmd, timeout=timeout)
@@ -226,9 +224,9 @@ async def continue_exec(
     session_id: str,
     timeout: float = 30.0,
 ) -> str:
-    """Continue execution after a breakpoint or interrupt (GDB 'continue' / 'c').
+    """Continue forward execution from the current stop. Blocks until the program stops again.
 
-    Waits until the program stops again or the timeout expires.
+    rr replay sessions: use reverse-continue to run backwards instead.
     """
     return await manager.get(session_id).send("continue", timeout=timeout)
 
@@ -239,11 +237,12 @@ async def step(
     count: int = 1,
     instruction: bool = False,
 ) -> str:
-    """Step into the next source line or machine instruction (GDB 's' / 'stepi').
+    """Step forward into the next source line or machine instruction. Enters called functions.
 
-    count:       number of steps to take
-    instruction: if True, use stepi — step one machine instruction instead of
-                 one source line (useful when debugging without source)
+    Use next to step over calls instead.
+    count:       number of steps (default 1)
+    instruction: if True, step one machine instruction instead of one source line
+    rr replay sessions: use reverse-step to step backwards.
     """
     cmd = f"{'stepi' if instruction else 'step'} {count}"
     return await manager.get(session_id).send(cmd)
@@ -255,11 +254,12 @@ async def next_line(
     count: int = 1,
     instruction: bool = False,
 ) -> str:
-    """Step over the next source line or machine instruction (GDB 'next' / 'nexti' / 'n').
+    """Step forward over the next source line or machine instruction. Does not enter called functions.
 
-    Unlike step, next does not enter called functions.
-    count:       number of steps to take
-    instruction: if True, use nexti — step over one machine instruction
+    Use step to enter calls instead.
+    count:       number of steps (default 1)
+    instruction: if True, step over one machine instruction instead of one source line
+    rr replay sessions: use reverse-next to step backwards.
     """
     cmd = f"{'nexti' if instruction else 'next'} {count}"
     return await manager.get(session_id).send(cmd)
@@ -270,7 +270,10 @@ async def finish(
     session_id: str,
     timeout: float = 30.0,
 ) -> str:
-    """Run until the current function returns, then print the return value (GDB 'finish')."""
+    """Run forward until the current function returns, then show the return value. Blocks until stopped.
+
+    rr replay sessions: use reverse-finish to run backwards to the call site instead.
+    """
     return await manager.get(session_id).send("finish", timeout=timeout)
 
 
@@ -280,23 +283,20 @@ async def until(
     location: str,
     timeout: float = 30.0,
 ) -> str:
-    """Run until a source location is reached (GDB 'until').
+    """Run forward until a specific location is reached. Blocks until stopped.
 
-    Useful for skipping over loops or blocks of code without setting and
-    deleting a temporary breakpoint.  Blocks until the inferior stops.
-
-    location: file:line, function name, or *address
-              e.g. "foo.c:42", "cleanup", "*0x401234"
+    Skips over loops and blocks of code without setting a temporary breakpoint.
+    location: file:line, function name, or *address — e.g. "foo.c:42", "cleanup", "*0x401234"
     """
     return await manager.get(session_id).send(f"until {location}", timeout=timeout)
 
 
 @mcp.tool()
 async def interrupt(session_id: str) -> dict:
-    """Send SIGINT to interrupt a running inferior.
+    """Interrupt a running inferior by sending SIGINT.
 
-    Use this when run or continue_exec is blocking because the program has not
-    stopped yet.  The blocked call will then return with the stop output.
+    Use when run, continue_exec, or a reverse-* tool is blocking because the program
+    has not stopped yet.  The blocked call returns with the stop output.
     """
     manager.get(session_id).interrupt()
     return {"status": "SIGINT sent"}
@@ -309,10 +309,10 @@ async def reverse_continue(
     session_id: str,
     timeout: float = 30.0,
 ) -> str:
-    """Run backwards until a breakpoint or watchpoint is hit (rr 'reverse-continue' / 'rc').
+    """[rr only] Run backwards until a breakpoint or watchpoint is hit. Blocks until stopped.
 
-    Only works in an rr replay session (start_replay_session).
-    Waits until the inferior stops or the timeout expires.
+    Requires an rr replay session created with start_replay_session.
+    The reverse counterpart of continue_exec: resumes execution in reverse through previously executed code.
     """
     return await manager.get(session_id).send("reverse-continue", timeout=timeout)
 
@@ -323,11 +323,12 @@ async def reverse_step(
     count: int = 1,
     instruction: bool = False,
 ) -> str:
-    """Step backwards one source line or machine instruction (rr 'reverse-step' / 'reverse-stepi').
+    """[rr only] Step backwards into the previous source line or machine instruction. Blocks until stopped.
 
-    Only works in an rr replay session (start_replay_session).
-    Enters called functions (use reverse-next to step over them).
-    count:       number of steps to take
+    Requires an rr replay session created with start_replay_session.
+    The reverse counterpart of step: enters called functions when going backwards.
+    Use reverse-next to step backwards without entering calls.
+    count:       number of steps (default 1)
     instruction: if True, step back one machine instruction instead of one source line
     """
     cmd = f"{'reverse-stepi' if instruction else 'reverse-step'} {count}"
@@ -340,11 +341,12 @@ async def reverse_next(
     count: int = 1,
     instruction: bool = False,
 ) -> str:
-    """Step backwards over one source line or machine instruction (rr 'reverse-next' / 'reverse-nexti').
+    """[rr only] Step backwards over the previous source line or machine instruction. Blocks until stopped.
 
-    Only works in an rr replay session (start_replay_session).
-    Unlike reverse-step, does not enter called functions.
-    count:       number of steps to take
+    Requires an rr replay session created with start_replay_session.
+    The reverse counterpart of next: does not enter called functions when going backwards.
+    Use reverse-step to step backwards into calls.
+    count:       number of steps (default 1)
     instruction: if True, step back one machine instruction instead of one source line
     """
     cmd = f"{'reverse-nexti' if instruction else 'reverse-next'} {count}"
@@ -356,10 +358,10 @@ async def reverse_finish(
     session_id: str,
     timeout: float = 30.0,
 ) -> str:
-    """Run backwards until just before the current function was called (rr 'reverse-finish').
+    """[rr only] Run backwards until just before the current function was called. Blocks until stopped.
 
-    Only works in an rr replay session (start_replay_session).
-    The symmetric counterpart of finish: where finish runs forward to the return,
+    Requires an rr replay session created with start_replay_session.
+    The reverse counterpart of finish: where finish runs forward to the return,
     reverse-finish runs backward to the call site.
     """
     return await manager.get(session_id).send("reverse-finish", timeout=timeout)
@@ -374,12 +376,11 @@ async def set_breakpoint(
     condition: str | None = None,
     temporary: bool = False,
 ) -> str:
-    """Set a breakpoint (GDB 'break' / 'tbreak' / 'br').
+    """Set a breakpoint at a location. Triggers in both directions in rr replay sessions.
 
     location:  function name, file:line, or *address
                e.g. "main", "foo.c:42", "*0x401234", "MyClass::method"
-    condition: optional GDB expression that must be true to trigger
-               e.g. "x > 5", "strcmp(name, \"alice\") == 0"
+    condition: optional expression that must be true to trigger — e.g. "x > 5"
     temporary: if True, the breakpoint auto-deletes after its first hit
     """
     s = manager.get(session_id)
