@@ -332,7 +332,7 @@ From the subprocess's point of view, once rr has handed off to gdb, the stdin/st
   re.compile(r"Saving execution to trace directory `([^`]+)`")
   ```
   rr writes this to stderr: `rr: Saving execution to trace directory `/home/user/.local/share/rr/binary-0`.`
-- Returns `{exit_code, trace_dir, output}`. `trace_dir` is `None` if the regex didn't match (rr not found, or unexpected output format).
+- Returns `{trace_dir, output}`. `trace_dir` is `None` if the regex didn't match (rr not found, or unexpected output format). `exit_code` is intentionally omitted — crashes and non-zero exits are normal and rr records them as part of the trace.
 - `FileNotFoundError` from `create_subprocess_exec` is caught and re-raised as `GdbError("rr not found in PATH")`.
 
 ### Reverse-execution in replay sessions

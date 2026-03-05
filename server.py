@@ -15,8 +15,8 @@ from mcp.server.fastmcp import FastMCP
 
 from gdb import GdbError, GdbManager
 
-# Matches: rr: Saving execution to trace directory `/path/to/trace`.
-_RR_TRACE_RE = re.compile(r"Saving execution to trace directory `([^`]+)`")
+# Matches: rr: Saving execution to trace directory `/path/to/trace'.
+_RR_TRACE_RE = re.compile(r"Saving execution to trace directory `([^']+)'")
 
 manager = GdbManager()
 
@@ -76,8 +76,9 @@ async def rr_record(
 
     Runs the program under rr's recorder and waits for it to finish.  Returns
     the trace directory path (trace_dir) which can be passed directly to
-    start_replay_session.  Note: the program's stdin is closed during recording;
-    non-interactive programs work without changes.
+    start_replay_session.  Crashes and non-zero exit codes are normal and do
+    not indicate failure — rr records the crash as part of the trace.
+    Note: the program's stdin is closed during recording.
 
     binary:  path to the executable to record
     args:    command-line arguments for the binary
@@ -112,7 +113,6 @@ async def rr_record(
     trace_dir = m.group(1) if m else None
 
     return {
-        "exit_code": process.returncode,
         "trace_dir": trace_dir,
         "output": output,
     }
