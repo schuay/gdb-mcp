@@ -168,9 +168,6 @@ tools do.
 
 ## Notes
 
-**Sessions time out** after 10 minutes of inactivity and are closed
-automatically. `list_sessions` shows the current idle time for each session.
-
 **GDB plugins** such as pwndbg or GEF work if installed, but their custom
 prompts (`(pwndbg)`, `gef>`) will break session startup. Either avoid them or
 force the standard prompt in `.gdbinit`:

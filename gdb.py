@@ -23,7 +23,6 @@ import asyncio
 import re
 import shlex
 import signal
-import time
 import uuid
 from contextlib import suppress
 from dataclasses import dataclass, field
@@ -34,9 +33,6 @@ _PROMPT_RE = re.compile(r"^\(gdb\)\s*$")
 
 # Matches MI stream records:  ~"content"  @"content"  &"content"
 _STREAM_RE = re.compile(r'^([~@&])"(.*)"$')
-
-# Default idle timeout before a session is reaped by the cleanup task
-IDLE_TIMEOUT = 600.0  # seconds
 
 
 class GdbError(Exception):
@@ -121,7 +117,6 @@ class GdbSession:
     kind: str = "gdb"  # "gdb" or "rr-replay"
     _lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
     _broken: bool = field(default=False, repr=False)
-    last_used: float = field(default_factory=time.monotonic, repr=False)
 
     async def send(self, cmd: str, timeout: float = 30.0) -> str:
         """Execute a GDB command and return formatted output.
@@ -140,7 +135,6 @@ class GdbSession:
                 "use batch_commands to send multiple commands"
             )
         async with self._lock:
-            self.last_used = time.monotonic()
             self.process.stdin.write((cmd + "\n").encode())
             await self.process.stdin.drain()
 
@@ -221,21 +215,6 @@ class GdbSession:
 class GdbManager:
     def __init__(self) -> None:
         self._sessions: dict[str, GdbSession] = {}
-
-    def start_cleanup(self) -> None:
-        """Start a background task that reaps sessions idle longer than IDLE_TIMEOUT."""
-        asyncio.create_task(self._cleanup_loop())
-
-    async def _cleanup_loop(self) -> None:
-        while True:
-            await asyncio.sleep(60)
-            now = time.monotonic()
-            stale = [
-                sid for sid, s in list(self._sessions.items())
-                if now - s.last_used > IDLE_TIMEOUT
-            ]
-            for sid in stale:
-                await self.remove(sid)
 
     async def create(
         self,
@@ -339,13 +318,11 @@ class GdbManager:
             await self.remove(sid)
 
     def list_all(self) -> list[dict]:
-        now = time.monotonic()
         return [
             {
                 "id": s.id,
                 "kind": s.kind,
                 "alive": s.process.returncode is None,
-                "idle_seconds": int(now - s.last_used),
             }
             for s in self._sessions.values()
         ]

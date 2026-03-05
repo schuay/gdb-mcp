@@ -23,7 +23,6 @@ manager = GdbManager()
 
 @asynccontextmanager
 async def _lifespan(app):
-    manager.start_cleanup()
     yield
     await manager.close_all()
 
@@ -60,7 +59,7 @@ async def stop_session(session_id: str) -> dict:
 
 @mcp.tool()
 async def list_sessions() -> list:
-    """List all active sessions. Each entry includes id, kind ("gdb" or "rr-replay"), alive status, and idle_seconds."""
+    """List all active sessions. Each entry includes id, kind ("gdb" or "rr-replay"), and alive status."""
     return manager.list_all()
 
 
