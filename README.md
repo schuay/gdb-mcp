@@ -1,8 +1,12 @@
 # gdb-mcp
 
+> **Experimental** — expect rough edges and breaking changes.
+
 MCP server that exposes GDB debugging as tools. An AI assistant can set
 breakpoints, run programs, step through code, inspect variables and memory,
 and examine registers — all via structured tool calls.
+
+Reverse debugging with rr is also supported.
 
 ## Requirements
 
@@ -13,9 +17,14 @@ and examine registers — all via structured tool calls.
 ## Installation
 
 ```bash
-git clone https://github.com/yourname/gdb-mcp
-cd gdb-mcp
-uv sync
+uv tool install git+https://github.com/schuay/gdb-mcp.git
+```
+
+This installs a `gdb-mcp` command into an isolated environment and puts a
+shim on your `$PATH`.  Upgrade later with:
+
+```bash
+uv tool upgrade gdb-mcp
 ```
 
 ## Connecting to Claude
