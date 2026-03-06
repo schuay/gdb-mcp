@@ -28,44 +28,7 @@ shim on your `$PATH`.  Upgrade later with:
 uv tool upgrade gdb-mcp
 ```
 
-## Connecting to Claude
-
-### Claude Code
-
-```bash
-claude mcp add gdb -- gdb-mcp
-```
-
-Or add manually to `~/.claude.json`:
-
-```json
-{
-  "mcpServers": {
-    "gdb": {
-      "command": "gdb-mcp"
-    }
-  }
-}
-```
-
-### Claude Desktop
-
-Add to `claude_desktop_config.json`:
-
-```json
-{
-  "mcpServers": {
-    "gdb": {
-      "command": "gdb-mcp"
-    }
-  }
-}
-```
-
-If `gdb-mcp` is not on `$PATH` in your desktop environment, replace `"gdb-mcp"` with
-the full path printed by `which gdb-mcp` (typically `~/.local/bin/gdb-mcp`).
-
-### Gemini CLI
+### Install and configure Gemini CLI
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/schuay/gdb-mcp/main/install-gemini.sh | bash
