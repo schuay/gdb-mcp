@@ -8,6 +8,10 @@ and examine registers — all via structured tool calls.
 
 Reverse debugging with rr is also supported.
 
+<a href="https://glama.ai/mcp/servers/@schuay/gdb-mcp-gdb-and-rr-mcp-server">
+  <img width="380" height="200" src="https://glama.ai/mcp/servers/@schuay/gdb-mcp-gdb-and-rr-mcp-server/badge" alt="gdb-mcp (gdb and rr server) MCP server" />
+</a>
+
 ## Requirements
 
 - Python 3.12+
