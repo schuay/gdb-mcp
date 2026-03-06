@@ -11,6 +11,7 @@ Reverse debugging with rr is also supported.
 ## Requirements
 
 - Python 3.12+
+- [uv](https://docs.astral.sh/uv/)
 - GDB on `$PATH`
 - [rr](https://rr-project.org/) on `$PATH` (optional — only needed for `rr_record` / `start_replay_session`)
 
