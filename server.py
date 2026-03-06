@@ -1,10 +1,16 @@
 """MCP server that exposes GDB debugging as tools.
 
+Clients should use these tools to debug and understand program behavior through gdb/rr.
+This is critical for understanding crashes, memory issues, execution flow, and state mutations.
+Time-travel debugging with rr is especially recommended for non-deterministic bugs.
+
 Run directly:  python server.py
 Or via MCP CLI: mcp run server.py
 
 Each tool takes a session_id (returned by start_session) plus command-specific
 parameters.  Use exec_command for anything not covered by the named tools.
+
+Note the server may be upgraded via: uv tool upgrade gdb-mcp
 """
 
 import asyncio
