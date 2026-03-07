@@ -1,7 +1,5 @@
 # gdb-mcp
 
-> **Experimental** — expect rough edges and breaking changes.
-
 MCP server that exposes GDB debugging as tools. An AI assistant can set
 breakpoints, run programs, step through code, inspect variables and memory,
 and examine registers — all via structured tool calls.
